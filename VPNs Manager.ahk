@@ -1,7 +1,7 @@
 ﻿/*
 	VPNs Manager - v0.1
 	Created by BLBC (github.com/hjk789)
-	Copyright (c) 2020 BLBC
+	Copyright (c) 2020+ BLBC
 */
 
 #SingleInstance force
@@ -41,9 +41,9 @@ global stopFetching
 	;/* Create the ListView */
 	;{
 		lvWidth := 460
-		gui, add, listview, Sort -ReadOnly Grid h300 w%lvWidth% glistviewEvent, Name|Server|Good|Status|Last online|Chkd
+		gui, add, listview, Sort -ReadOnly Grid h300 w%lvWidth% glistviewEvent, Name|Server|Good|Status|Last online|Chkd|Max speed|Max Average ;|Trend speed|Trend speed 2
 
-		global cols := {"Name":1, "Server":2, "Good":3, "Status":4, "LastOnline":5, "Checked":6}		; Store the columns indexes in an object for easy use.
+		global cols := {"Name":1, "Server":2, "Good":3, "Status":4, "LastOnline":5, "Checked":6, "MaxSpeed":7, "MaxAverage":8}		; Store the columns indexes in an object for easy use.
 
 		LV_ModifyCol(cols.server, "Integer Left")
 	;}
@@ -224,7 +224,7 @@ global stopFetching
 
 			;/* When the startup argument connectOnStartup is used, update the servers status once after the first 3 minutes, which is enough time for everything to be up and running before that. */
 			tempFunc := Func("pingAllServers").bind()		; Because there can be only one timer for each function/label, this creates a function object and binds an empty parameter to make it seem different to the interpreter.
-			setTimer, %tempFunc%, -180000		; 3 minutes.
+			setTimer, %tempFunc%, -120000		; 2 minutes.
 		}
 		else if (A_Args[1] == "--openAddServerScreen")
 			openAddServerScreen()
@@ -244,6 +244,17 @@ global stopFetching
 setTimer, pingAllServers, 3600000		; Ping all servers each hour.
 
 setTimer, waitForConnectError, -1		; Wait, in a separated thread, for a connection error, otherwise it would halt the whole program.
+
+
+global avgarr := []
+global avgsamples := 50
+global trendobj := {}
+global trend := "0"
+global trend2 := "0"
+global maxspeed := 0
+global maxavg := 0
+
+setupNetworkSpeedMeter()
 
 return
 
@@ -671,7 +682,7 @@ addNewServer(serverName, serverIP, port)
 	gui, mainUI:default
 
 	;/* Add the server to SoftEther VPNs list */
-	runwait %vpncmd% accountcreate "%serverName%" /server:%serverIP%:%port% /hub:"VPNGATE" /username:"vpn" /nic:%VpnAdapterName%,, hide
+	runwait %vpncmd% accountcreate "%serverName%" /server:%serverIP%:%port% /hub:"VPNGATE" /username:"vpn" /nic:"%VpnAdapterName%",, hide
 
 	;/* Add to the ini file */
 	IniWrite, %port%, %iniFileName%, %serverIP%, Port
@@ -679,7 +690,7 @@ addNewServer(serverName, serverIP, port)
 	IniWrite, Online, %iniFileName%, %serverIP%, Status
 	IniWrite, no, %iniFileName%, %serverIP%, Checked
 
-	;/* Add to the Comodo Firewall's exceptions */
+	;/* Add to Comodo Firewall's exceptions */
 	if (isUsingComodoFirewall)
 	{
 		Random, rand, 50, 999
@@ -843,6 +854,7 @@ fetchServers()
 }
 
 setStopFetching() {
+	Critical
 	stopFetching := true
 }
 
@@ -918,6 +930,108 @@ submitAddServerScreen()
 	ControlSetText, Edit2, 
 	ControlSetText, Edit3, 
 }
+
+
+;/* Network speed meter functions */
+;{
+	setupNetworkSpeedMeter()
+	{	
+		;/* The code inside this function was created by Sean, with few adaptations by BLBC. Original code: https://autohotkey.com/board/topic/16574-network-downloadupload-meter/  */
+
+		If GetInterfaceTable(tb)
+			return
+
+		Loop, % DecodeInteger(&tb)
+		{
+			If DecodeInteger(&tb + 4 + 860 * (A_Index - 1) + 544) < 4 || DecodeInteger(&tb + 4 + 860 * (A_Index - 1) + 516) = 24
+				Continue
+			ptr := &tb + 4 + 860 * (A_Index - 1)
+				Break
+		}
+
+		If !ptr
+			return
+
+		SetTimer, updateNetworkMeter, 1000
+
+		settimer, resetIdle, 60000
+	}
+
+	updateNetworkMeter()
+	{
+		num := getDownloadedKilobytes()
+
+		if (avgarr.maxindex() >= avgsamples)
+			avgarr.removeAt(1)
+			
+		avgarr.push(num)
+
+		if (num > maxspeed)
+		{
+			maxspeed := floor(num)
+			LV_Modify(chosenRow.index, "Col" cols.MaxSpeed, maxspeed)
+		}
+
+		avgres := 0
+
+		loop, % avgarr.maxindex()
+			avgres += avgarr[A_index]
+
+		avgres := avgres / avgsamples
+
+		if (avgres > maxavg)
+		{
+			maxavg := floor(avgres)
+			LV_Modify(chosenRow.index, "Col" cols.MaxAverage, maxavg)
+		}
+		
+	}
+
+	getDownloadedKilobytes()
+	{
+		;/* The code inside this function was created by Sean, with adaptations by BLBC. Original code: https://autohotkey.com/board/topic/16574-network-downloadupload-meter/  */
+
+		global
+
+		DllCall("iphlpapi\GetIfEntry", "Uint", ptr)
+
+		totalDownloadedBytes := DecodeInteger(ptr + 552)
+
+		downloadedKilobytes := (totalDownloadedBytes - previousTotalDownloadedBytes) / 1024
+
+		previousTotalDownloadedBytes := totalDownloadedBytes
+
+		return downloadedKilobytes
+	}
+
+
+	;/* The four functions below were created by Sean (https://autohotkey.com/board/topic/16574-network-downloadupload-meter/). */
+
+	DecodeInteger(ptr)
+	{
+		Return *ptr | *++ptr << 8 | *++ptr << 16 | *++ptr << 24
+	}
+
+	GetInterfaceTable(ByRef tb, bOrder = False)
+	{
+		nSize := 4 + 860 * GetNumberOfInterfaces() + 8
+		VarSetCapacity(tb, nSize)
+		Return DllCall("iphlpapi\GetIfTable", "Uint", &tb, "UintP", nSize, "int", bOrder)
+	}
+
+	GetNumberOfInterfaces()
+	{
+		DllCall("iphlpapi\GetNumberOfInterfaces", "UintP", nIf)
+		Return nIf
+	}
+
+	GetIfEntry(ByRef tb, idx)
+	{
+		VarSetCapacity(tb, 860)
+		DllCall("ntdll\RtlFillMemoryUlong", "Uint", &tb + 512, "Uint", 4, "Uint", idx)
+		Return DllCall("iphlpapi\GetIfEntry", "Uint", &tb)
+	}
+;}
 
 
 return
