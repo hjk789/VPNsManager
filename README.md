@@ -2,7 +2,7 @@
 
 Easily manage client SoftEther VPN Gate servers, fetch new ones, ping and see max speed
 
-![Main screen](https://i.imgur.com/H2Olyit.png)
+![Main screen](https://i.imgur.com/W0vHDI2.png)
 
 ## About
 
