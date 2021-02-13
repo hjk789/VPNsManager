@@ -1,5 +1,5 @@
 ﻿/*
-    VPNs Manager - v0.2.1
+    VPNs Manager - v0.2.3
     Created by BLBC (github.com/hjk789)
     Copyright (c) 2020+ BLBC
 */
@@ -19,10 +19,10 @@ global windowsFirewallVPNsRegistryPath := "HKEY_LOCAL_MACHINE\SYSTEM\CurrentCont
 global windowsFirewallRuleGUID         := "{THE-GUID-OF-THE-RULE-THAT-ALLOWS-THE-VPN-SERVERS-IPs}"
 
 global vpnAdapterName         := "VPN Client Adapter - VPN"               ; This is the default NIC name that SoftEther suggests for the network adapter created to be used by the VPNs. If you've set a different name, change it to to the name you've set.
-global SoftEtherDirectoryPath := "C:\Program Files\SoftEther VPN Client"
+global SoftEtherDirectoryPath := "E:\Program Files\SoftEther VPN Client"
 global vpncmd                 := """" SoftEtherDirectoryPath "\vpncmd.exe"" 127.0.0.1 /client /cmd"
 
-;*************************************
+;**************************************
 
 
 
@@ -50,7 +50,16 @@ if (isUsingComodoFirewall)
 
 ;/* Create the main screen */
 ;{
-    gui, mainUI:new
+    gui, mainUI:new, LastFound
+
+    ;/* Set the taskbar icon as the ringed planet icon */
+    ;{
+        shell32Handle := DllCall("GetModuleHandle", str, "shell32.dll", ptr)
+        iconHandle := DllCall("LoadImage", ptr, shell32Handle, str, "#14", uint, 1, int, 32, int, 32, uint, 0)
+
+        SendMessage, WM_SETICON:=0x80, 0, iconHandle    ; Set as the LastFound window's small icon version.
+        SendMessage, WM_SETICON:=0x80, 1, iconHandle    ; Set as the LastFound window's big icon version.
+    ;}
 
     ;/* Create the ListView */
     ;{
@@ -87,9 +96,9 @@ if (isUsingComodoFirewall)
         Gui, add, button, xp y+85 w34 h40 grebuildListView, ⟲
 
         Gui, Font, s12
-        Gui, add, button, x80 h40 gfetchServers, Fetch servers
+        Gui, add, button, x110 h40 gfetchServers, Fetch servers
 
-        Gui, add, button, x+125 h40 gpingAllServers, Ping servers
+        Gui, add, button, x+155 h40 gpingAllServers, Ping servers
     ;}
 
     ;/* Create the status bar */
